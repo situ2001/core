@@ -109,7 +109,8 @@ export class TerminalController extends WithEventBus implements ITerminalControl
   @Autowired(ICtxMenuRenderer)
   private ctxMenuRenderer: ICtxMenuRenderer;
 
-  private terminalContextKey: TerminalContextKey;
+  contextKeyReady = new Deferred<void>();
+  private terminalContextKey: TerminalContextKey | undefined;
 
   @observable
   themeBackground: string;
@@ -285,7 +286,18 @@ export class TerminalController extends WithEventBus implements ITerminalControl
   }
 
   async firstInitialize() {
-    await this.layoutService.viewReady.promise;
+    Promise.race([
+      (async () => {
+        await this.layoutService.viewReady.promise;
+        await this.contextKeyReady.promise;
+      })(),
+      new Promise<void>((resolve) => {
+        setTimeout(() => {
+          this.logger.warn("TerminalView didn't initialize in 2s, skip waiting, but may cause some problem");
+          resolve();
+        }, 2000);
+      }),
+    ]);
 
     this._tabbarHandler = this.layoutService.getTabbarHandler(TerminalContainerId);
     this.themeBackground = this.terminalTheme.terminalTheme.background || '';
@@ -380,7 +392,7 @@ export class TerminalController extends WithEventBus implements ITerminalControl
       }
     }
 
-    this.terminalContextKey.isTerminalViewInitialized.set(true);
+    this.terminalContextKey?.isTerminalViewInitialized.set(true);
     this._ready.resolve();
   }
 
@@ -396,12 +408,12 @@ export class TerminalController extends WithEventBus implements ITerminalControl
 
   focus() {
     this._focus = true;
-    this.terminalContextKey.isTerminalFocused.set(true);
+    this.terminalContextKey?.isTerminalFocused.set(true);
   }
 
   blur() {
     this._focus = false;
-    this.terminalContextKey.isTerminalFocused.set(false);
+    this.terminalContextKey?.isTerminalFocused.set(false);
   }
 
   onContextMenu(e: React.MouseEvent<HTMLElement>): void {

@@ -45,6 +45,7 @@ export interface ITerminalController extends Disposable {
   clients: Map<string, ITerminalClient>;
   activeClient?: ITerminalClient;
   themeBackground: string;
+  contextKeyReady: Deferred<void>;
   contextKeyService?: IContextKeyService;
   initContextKey(dom: HTMLDivElement): void;
   firstInitialize(): void;
