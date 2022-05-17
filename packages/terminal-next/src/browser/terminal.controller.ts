@@ -284,7 +284,9 @@ export class TerminalController extends WithEventBus implements ITerminalControl
     }
   }
 
-  firstInitialize() {
+  async firstInitialize() {
+    await this.layoutService.viewReady.promise;
+
     this._tabbarHandler = this.layoutService.getTabbarHandler(TerminalContainerId);
     this.themeBackground = this.terminalTheme.terminalTheme.background || '';
 

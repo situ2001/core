@@ -228,6 +228,9 @@ export const MainLayoutTabbarOnActivate = new Emitter<any>();
 export const MainLayoutTabbarOnInActivate = new Emitter<any>();
 
 export class MockMainLayoutService {
+  viewReady = {
+    promise: Promise.resolve(),
+  };
   getTabbarHandler() {
     return {
       onActivate: MainLayoutTabbarOnActivate.event,
