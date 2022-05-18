@@ -118,11 +118,10 @@ export class LayoutService extends WithEventBus implements IMainLayoutService {
         contribution.onDidRender();
       }
     }
-    this.restoreState();
+
     const list: Array<Promise<void>> = [];
     // 渲染之后注册的tab不再恢复状态
     this.tabbarServices.forEach((service) => {
-      service.restoreState();
       // 仅确保tabbar视图加载完毕
       if (slotRendererRegistry.isTabbar(service.location)) {
         list.push(service.viewReady.promise);
@@ -209,11 +208,6 @@ export class LayoutService extends WithEventBus implements IMainLayoutService {
         : '';
     }
   };
-  restoreState() {
-    for (const service of this.tabbarServices.values()) {
-      this.restoreTabbarService(service);
-    }
-  }
 
   isVisible(location: string) {
     const tabbarService = this.getTabbarService(location);
@@ -269,6 +263,7 @@ export class LayoutService extends WithEventBus implements IMainLayoutService {
       });
       service.onceReady(async () => {
         await this.restoreTabbarService(service);
+        service.restoreState();
       });
       service.onSizeChange(() => debounce(() => this.storeState(service, service.currentContainerId), 200)());
       this.tabbarServices.set(location, service);
