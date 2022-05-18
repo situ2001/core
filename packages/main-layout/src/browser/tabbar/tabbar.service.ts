@@ -21,6 +21,7 @@ import {
   DisposableCollection,
   IScopedContextKeyService,
   Deferred,
+  ReadyEvent,
 } from '@opensumi/ide-core-browser';
 import { ResizeHandle } from '@opensumi/ide-core-browser/lib/components';
 import { LayoutState, LAYOUT_STATE } from '@opensumi/ide-core-browser/lib/layout/layout-state';
@@ -133,6 +134,14 @@ export class TabbarService extends WithEventBus {
   private tabInMoreKeyMap: Map<string, IContextKey<boolean>> = new Map();
 
   private scopedCtxKeyService: IScopedContextKeyService;
+
+  private _ready = new ReadyEvent<void>();
+  get onceReady() {
+    return this._ready.onceReady.bind(this._ready);
+  }
+  emitReady() {
+    this._ready.ready();
+  }
 
   constructor(public location: string) {
     super();

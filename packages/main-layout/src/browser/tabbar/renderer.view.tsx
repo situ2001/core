@@ -41,13 +41,14 @@ export const TabRendererBase: React.FC<{
   const resizeHandle = React.useContext(PanelContext);
   const rootRef = React.useRef<HTMLDivElement>(null);
   const [fullSize, setFullSize] = React.useState(0);
-  React.useLayoutEffect(() => {
+  React.useEffect(() => {
     tabbarService.registerResizeHandle(resizeHandle);
     components.forEach((component) => {
       tabbarService.registerContainer(component.options!.containerId, component);
     });
     tabbarService.updatePanelVisibility();
     tabbarService.viewReady.resolve();
+    tabbarService.emitReady();
   }, []);
   React.useEffect(() => {
     if (rootRef.current) {

@@ -40,7 +40,6 @@ import { AccordionService } from './accordion/accordion.service';
 import { TabBarHandler } from './tabbar-handler';
 import { TabbarService } from './tabbar/tabbar.service';
 
-
 @Injectable()
 export class LayoutService extends WithEventBus implements IMainLayoutService {
   @Autowired(INJECTOR_TOKEN)
@@ -158,15 +157,14 @@ export class LayoutService extends WithEventBus implements IMainLayoutService {
       }),
     );
   }
-
-  restoreState() {
+  restoreTabbarService = async (service: TabbarService) => {
     this.state = this.layoutState.getState(LAYOUT_STATE.MAIN, {
       [SlotLocation.left]: {
         currentId: undefined,
         size: undefined,
       },
       [SlotLocation.right]: {
-        currentId: '',
+        currentId: undefined,
         size: undefined,
       },
       [SlotLocation.bottom]: {
@@ -174,41 +172,46 @@ export class LayoutService extends WithEventBus implements IMainLayoutService {
         size: undefined,
       },
     });
-    for (const service of this.tabbarServices.values()) {
-      const { currentId, size } = this.state[service.location] || {};
-      service.prevSize = size;
-      let defaultContainer = service.visibleContainers[0] && service.visibleContainers[0].options!.containerId;
-      const defaultPanels = this.appConfig.defaultPanels;
-      const restorePanel = defaultPanels && defaultPanels[service.location];
-      if (defaultPanels && restorePanel !== undefined) {
-        if (restorePanel) {
-          if (service.containersMap.has(restorePanel)) {
-            defaultContainer = restorePanel;
-          } else {
-            const componentInfo = this.componentRegistry.getComponentRegistryInfo(restorePanel);
-            if (
-              componentInfo &&
-              this.appConfig.layoutConfig[service.location]?.modules &&
-              ~this.appConfig.layoutConfig[service.location].modules.indexOf(restorePanel)
-            ) {
-              defaultContainer = componentInfo.options!.containerId;
-            } else {
-              this.logger.warn(`[defaultPanels] 没有找到${restorePanel}对应的视图!`);
-            }
-          }
+    await service.viewReady.promise;
+
+    const { currentId, size } = this.state[service.location] || {};
+    service.prevSize = size;
+    let defaultContainer = service.visibleContainers[0] && service.visibleContainers[0].options!.containerId;
+    const defaultPanels = this.appConfig.defaultPanels;
+    const restorePanel = defaultPanels && defaultPanels[service.location];
+    if (defaultPanels && restorePanel !== undefined) {
+      if (restorePanel) {
+        if (service.containersMap.has(restorePanel)) {
+          defaultContainer = restorePanel;
         } else {
-          defaultContainer = '';
+          const componentInfo = this.componentRegistry.getComponentRegistryInfo(restorePanel);
+          if (
+            componentInfo &&
+            this.appConfig.layoutConfig[service.location]?.modules &&
+            ~this.appConfig.layoutConfig[service.location].modules.indexOf(restorePanel)
+          ) {
+            defaultContainer = componentInfo.options!.containerId;
+          } else {
+            this.logger.warn(`[defaultPanels] 没有找到${restorePanel}对应的视图!`);
+          }
         }
-      }
-      if (currentId === undefined) {
-        service.currentContainerId = defaultContainer;
       } else {
-        service.currentContainerId = currentId
-          ? service.containersMap.has(currentId)
-            ? currentId
-            : defaultContainer
-          : '';
+        defaultContainer = '';
       }
+    }
+    if (currentId === undefined) {
+      service.currentContainerId = defaultContainer;
+    } else {
+      service.currentContainerId = currentId
+        ? service.containersMap.has(currentId)
+          ? currentId
+          : defaultContainer
+        : '';
+    }
+  };
+  restoreState() {
+    for (const service of this.tabbarServices.values()) {
+      this.restoreTabbarService(service);
     }
   }
 
@@ -263,6 +266,9 @@ export class LayoutService extends WithEventBus implements IMainLayoutService {
             this.eventBus.fire(new ExtensionActivateEvent({ topic: 'onView', data: view.id }));
           });
         }
+      });
+      service.onceReady(async () => {
+        await this.restoreTabbarService(service);
       });
       service.onSizeChange(() => debounce(() => this.storeState(service, service.currentContainerId), 200)());
       this.tabbarServices.set(location, service);
