@@ -47,7 +47,6 @@ export const TabRendererBase: React.FC<{
       tabbarService.registerContainer(component.options!.containerId, component);
     });
     tabbarService.updatePanelVisibility();
-    tabbarService.viewReady.resolve();
     tabbarService.emitReady();
   }, []);
   React.useEffect(() => {

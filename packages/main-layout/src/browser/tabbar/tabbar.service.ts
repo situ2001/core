@@ -190,13 +190,12 @@ export class TabbarService extends WithEventBus {
   get visibleContainers() {
     const components: ComponentRegistryInfo[] = [];
     this.containersMap.forEach((component) => {
-      const state = this.state.get(component.options!.containerId);
+      const state = component.options && this.state.get(component.options.containerId);
       if (!state || !state.hidden) {
         components.push(component);
       }
     });
     // TODO 使用object来存state的话，初始containersMap为空，貌似就无法实现这个监听（无法引用到一个observable的属性）
-    // tslint:disable-next-line:no-unused-variable
     const size = this.state.size; // 监听state长度
     // 排序策略：默认根据priority来做一次排序，后续根据存储的index来排序，未存储过的（新插入的，比如插件）在渲染后（时序控制）始终放在最后
     // 排序为 state的 priority 从小到大 (注意和 componentInfo 中的 options 的 priority的含义不同，为了不breaking change，保留这种语义)
@@ -701,8 +700,8 @@ export class TabbarService extends WithEventBus {
     if (!this.resizeHandle) {
       return;
     }
-    const { getSize, setSize, lockSize } = this.resizeHandle;
     this.onCurrentChangeEmitter.fire({ previousId, currentId });
+    const { getSize, setSize, lockSize } = this.resizeHandle;
     const isCurrentExpanded = this.shouldExpand(currentId);
     if (this.shouldExpand(this.previousContainerId) || isCurrentExpanded) {
       this.handleFullExpanded(currentId, isCurrentExpanded);

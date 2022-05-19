@@ -262,8 +262,9 @@ export class LayoutService extends WithEventBus implements IMainLayoutService {
         }
       });
       service.onceReady(async () => {
-        await this.restoreTabbarService(service);
+        service.viewReady.resolve();
         service.restoreState();
+        await this.restoreTabbarService(service);
       });
       service.onSizeChange(() => debounce(() => this.storeState(service, service.currentContainerId), 200)());
       this.tabbarServices.set(location, service);
