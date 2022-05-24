@@ -751,8 +751,12 @@ export class EditorContribution
           return;
         }
 
-        this.editorDocumentModelService.changeModelOptions(resource.uri, {
-          encoding: selectedFileEncoding,
+        const uris =
+          resource.uri.scheme === 'diff' ? [resource.metadata.original, resource.metadata.modified] : [resource.uri];
+        uris.forEach((uri) => {
+          this.editorDocumentModelService.changeModelOptions(uri, {
+            encoding: selectedFileEncoding,
+          });
         });
       },
     });
