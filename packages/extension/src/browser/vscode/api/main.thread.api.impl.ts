@@ -27,6 +27,7 @@ import {
   IMainThreadTesting,
   IMainThreadEditorTabsShape,
   IMainThreadSCMShape,
+  IMainThreadDecorationsShape,
 } from '../../../common/vscode'; // '../../common';
 import { VSCodeExtensionService } from '../../../common/vscode';
 
