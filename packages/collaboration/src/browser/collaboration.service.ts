@@ -5,7 +5,13 @@ import * as Y from 'yjs';
 import { Injectable, Autowired, Inject, INJECTOR_TOKEN, Injector } from '@opensumi/di';
 import { ILogger, OnEvent, WithEventBus } from '@opensumi/ide-core-common';
 import { WorkbenchEditorService } from '@opensumi/ide-editor';
-import { EditorActiveResourceStateChangedEvent, EditorGroupCloseEvent } from '@opensumi/ide-editor/lib/browser';
+import {
+  EditorDocumentModelCreationEvent,
+  EditorDocumentModelRemovalEvent,
+  EditorGroupCloseEvent,
+  EditorGroupOpenEvent,
+  IEditorDocumentModelService,
+} from '@opensumi/ide-editor/lib/browser';
 import { WorkbenchEditorServiceImpl } from '@opensumi/ide-editor/lib/browser/workbench-editor.service';
 import { ITextModel, ICodeEditor } from '@opensumi/ide-monaco';
 
@@ -22,7 +28,7 @@ import './styles.less';
 
 class PendingBindingPayload {
   model: ITextModel;
-  editor: ICodeEditor | undefined;
+  editor: Set<ICodeEditor>;
 }
 
 @Injectable()
@@ -35,6 +41,9 @@ export class CollaborationService extends WithEventBus implements ICollaboration
 
   @Autowired(WorkbenchEditorService)
   private workbenchEditorService: WorkbenchEditorServiceImpl;
+
+  @Autowired(IEditorDocumentModelService)
+  private docModelManager: IEditorDocumentModelService;
 
   private yDoc: Y.Doc;
 
@@ -56,7 +65,7 @@ export class CollaborationService extends WithEventBus implements ICollaboration
           const payload = this.pendingBinding.get(key)!;
           const binding = this.createAndSetBinding(key, payload.model);
           if (payload.editor) {
-            binding.addEditor(payload.editor);
+            payload.editor.forEach((editor) => binding.addEditor(editor));
           }
           this.pendingBinding.delete(key);
           this.logger.debug('Binding created', binding);
@@ -136,59 +145,67 @@ export class CollaborationService extends WithEventBus implements ICollaboration
     }
   }
 
-  @OnEvent(EditorGroupCloseEvent)
-  private groupCloseHandler(e: EditorGroupCloseEvent) {
-    this.logger.debug('Group close tabs', e);
-    const uri = e.payload.resource.uri.toString();
-    // scan all opened uri
-    const anyGroupHasThisUri = this.workbenchEditorService.getAllOpenedUris().find((u) => u === e.payload.resource.uri);
-    if (!anyGroupHasThisUri) {
-      // remove binding from uri
-      this.removeBinding(uri);
+  // order of events(generally): create docModel(if necessary) => group tab opened
+  //                             group tab close => destroy docModel(if necessary)
+
+  @OnEvent(EditorDocumentModelCreationEvent)
+  private handleDocumentModelCreation(e: EditorDocumentModelCreationEvent) {
+    if (e.payload.uri.scheme === 'file') {
+      this.logger.debug('Doc model created', e);
+
+      const { payload } = e;
+      const uriString = payload.uri.toString();
+      const modelRef = this.docModelManager.getModelReference(payload.uri);
+      const monacoTextModel = modelRef?.instance.getMonacoModel();
+
+      if (monacoTextModel) {
+        this.logger.debug('TextModel', monacoTextModel);
+
+        if (this.yTextMap.has(uriString)) {
+          const binding = this.createAndSetBinding(uriString, monacoTextModel);
+          this.logger.debug('Binding created', binding);
+        } else {
+          this.backService.requestInitContent(uriString);
+          this.pendingBinding.set(uriString, { model: monacoTextModel, editor: new Set() });
+        }
+      }
     }
   }
 
-  @OnEvent(EditorActiveResourceStateChangedEvent)
-  private editorActiveResourceStateChangedHandler(e: EditorActiveResourceStateChangedEvent) {
-    // only support code editor
-    if (e.payload.openType === null || e.payload.openType?.type !== 'code') {
-      return;
+  @OnEvent(EditorDocumentModelRemovalEvent)
+  private handleDocumentModelRemoval(e: EditorDocumentModelRemovalEvent) {
+    if (e.payload.codeUri.scheme === 'file') {
+      this.logger.debug('Doc model removed', e);
+      this.removeBinding(e.payload.codeUri.toString());
     }
+  }
 
-    // get current uri
-    const uri = this.workbenchEditorService.currentResource?.uri.toString();
-    const text = this.workbenchEditorService.currentCodeEditor?.currentDocumentModel?.getText();
-    const textModel = this.workbenchEditorService.currentCodeEditor?.currentDocumentModel?.getMonacoModel();
+  @OnEvent(EditorGroupOpenEvent)
+  private editorGroupOpenHandler(e: EditorGroupOpenEvent) {
+    this.logger.debug('Group open tabs', e, e.payload.group.codeEditor);
 
-    if (!uri || text === undefined || textModel === undefined) {
-      return;
-    }
-
-    const monacoEditor = this.workbenchEditorService.currentCodeEditor?.monacoEditor;
-    const binding = this.getBinding(uri);
-
-    // check if there exists any binding
-    if (!binding) {
-      if (this.yTextMap.has(uri)) {
-        const binding = this.createAndSetBinding(uri, textModel);
-        if (monacoEditor) {
-          // add current editor after binding creation
-          binding.addEditor(monacoEditor);
-        }
-        this.logger.debug('Binding created', binding);
-      } else {
-        // tell server to set init content
-        this.backService.requestInitContent(uri);
-        // binding will be eventually created on yMap event
-
-        // FIXME if file not found?
-        this.pendingBinding.set(uri, { model: textModel, editor: monacoEditor });
-      }
+    const uriString = e.payload.resource.uri.toString();
+    if (this.bindingMap.has(uriString)) {
+      this.getBinding(uriString)!.addEditor(e.payload.group.codeEditor.monacoEditor);
     } else {
-      if (monacoEditor) {
-        // if binding, directly add current editor
-        binding.addEditor(monacoEditor);
+      // add to pending editor
+      const pendingBinding = this.pendingBinding.get(uriString);
+      if (pendingBinding) {
+        const editor = e.payload.group.codeEditor.monacoEditor;
+        pendingBinding.editor.add(editor);
       }
+    }
+  }
+
+  @OnEvent(EditorGroupCloseEvent)
+  private groupCloseHandler(e: EditorGroupCloseEvent) {
+    this.logger.debug('Group close tabs', e, e.payload.group.codeEditor);
+
+    // remove editor from binding
+    const uriString = e.payload.resource.uri.toString();
+    const binding = this.getBinding(uriString);
+    if (binding) {
+      binding.removeEditor(e.payload.group.codeEditor.monacoEditor);
     }
   }
 }

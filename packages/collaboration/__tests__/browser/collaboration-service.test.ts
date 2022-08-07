@@ -1,16 +1,21 @@
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import * as Y from 'yjs';
 
-import { Injectable } from '@opensumi/di';
-import { FilesChangeEvent } from '@opensumi/ide-core-browser';
-import { EventBusImpl, FileChangeType, IEventBus, ILogger, URI } from '@opensumi/ide-core-common';
+import { EventBusImpl, IEventBus, ILogger, URI } from '@opensumi/ide-core-common';
 import { INodeLogger } from '@opensumi/ide-core-node';
 import { createBrowserInjector } from '@opensumi/ide-dev-tool/src/injector-helper';
 import { MockInjector } from '@opensumi/ide-dev-tool/src/mock-injector';
 import { WorkbenchEditorService } from '@opensumi/ide-editor';
-import { EditorActiveResourceStateChangedEvent, EditorGroupCloseEvent } from '@opensumi/ide-editor/lib/browser';
+import {
+  EditorDocumentModelCreationEvent,
+  EditorDocumentModelRemovalEvent,
+  EditorGroupCloseEvent,
+  EditorGroupOpenEvent,
+  IEditorDocumentModelCreationEventPayload,
+  IEditorDocumentModelService,
+} from '@opensumi/ide-editor/lib/browser';
 import { IFileService } from '@opensumi/ide-file-service';
-import { ITextModel } from '@opensumi/ide-monaco';
 import * as monaco from '@opensumi/monaco-editor-core/esm/vs/editor/editor.api';
 import { createModel } from '@opensumi/monaco-editor-core/esm/vs/editor/standalone/browser/standaloneEditor';
 
@@ -20,44 +25,14 @@ import { TextModelBinding } from '../../src/browser/textmodel-binding';
 import { CollaborationServiceForClient } from '../../src/node/collaboration.service';
 import { YWebsocketServerImpl } from '../../src/node/y-websocket-server';
 
-@Injectable()
-class MockWorkbenchEditorService {
-  uri: URI;
-
-  currentResource: { uri: URI };
-
-  currentCodeEditor: {
-    currentDocumentModel: { getText: () => string; getMonacoModel: () => ITextModel };
-  };
-
-  constructor() {}
-
-  updateUri(uri: string) {
-    this.uri = new URI(uri);
-    this.currentResource = { uri: this.uri };
-  }
-
-  updateCurrentTextModelWithString(text: string) {
-    const textModel = createModel(text, undefined, monaco.Uri.parse(this.uri.toString()));
-    this.currentCodeEditor = {
-      currentDocumentModel: {
-        getText: () => textModel.getValue(),
-        getMonacoModel: () => textModel,
-      },
-    };
-  }
-
-  getAllOpenedUris() {
-    return this.uri ? [this.uri] : [];
-  }
-}
-
 describe('CollaborationService basic routines', () => {
   let injector: MockInjector;
   let service: CollaborationService;
   let server: YWebsocketServerImpl;
   let eventBus: IEventBus;
-  let workbenchEditorService: MockWorkbenchEditorService;
+  let workbenchEditorService: WorkbenchEditorService;
+
+  const MOCK_URI = 'file://home/situ2001/114514/1919810';
 
   beforeAll(() => {
     injector = createBrowserInjector([]);
@@ -85,11 +60,15 @@ describe('CollaborationService basic routines', () => {
 
     injector.addProviders({
       token: WorkbenchEditorService,
-      useClass: MockWorkbenchEditorService,
+      useValue: {
+        currentResource: {
+          uri: {
+            toString: jest.fn().mockImplementation(() => MOCK_URI),
+          },
+        },
+      },
     });
-    workbenchEditorService = injector.get<MockWorkbenchEditorService>(WorkbenchEditorService);
-    workbenchEditorService.updateUri('file://home/situ2001/114514/1919810');
-    workbenchEditorService.updateCurrentTextModelWithString('');
+    workbenchEditorService = injector.get(WorkbenchEditorService);
 
     server = injector.get(YWebsocketServerImpl);
     eventBus = injector.get(IEventBus);
@@ -103,6 +82,23 @@ describe('CollaborationService basic routines', () => {
       }
     });
 
+    // mock model manager
+    injector.addProviders({
+      token: IEditorDocumentModelService,
+      useValue: {
+        getModelReference: jest.fn().mockImplementation(function () {
+          return {
+            instance: {
+              getMonacoModel: () => {
+                const model = createModel('', undefined);
+                return model;
+              },
+            },
+          };
+        }),
+      },
+    });
+
     // start server
     server.initialize();
   });
@@ -113,7 +109,8 @@ describe('CollaborationService basic routines', () => {
     expect(spy).toBeCalled();
   });
 
-  it('should create a new binding when EditorActiveResourceStateChanged', async () => {
+  it('should create a new binding when EditorDocumentModelCreationEvent', async () => {
+    // old
     let _handler: () => void;
     const promise = new Promise((resolve) => {
       const handler = () => resolve(1);
@@ -121,19 +118,54 @@ describe('CollaborationService basic routines', () => {
       service['yTextMap'].observe(handler);
     }).finally(() => service['yTextMap'].unobserve(_handler));
 
-    const event = new EditorActiveResourceStateChangedEvent({
-      openType: { type: 'code' },
-      resource: null,
-    });
+    const event = new EditorDocumentModelCreationEvent({
+      uri: monaco.Uri.parse(MOCK_URI),
+    } as any as IEditorDocumentModelCreationEventPayload);
     eventBus.fire(event);
+
+    // if now comes some editors
+    const editor = monaco.editor.create(document.createElement('div'), { value: '' });
+    eventBus.fire(
+      new EditorGroupOpenEvent({
+        resource: {
+          uri: {
+            toString: jest.fn().mockImplementation(() => MOCK_URI),
+          },
+        } as any,
+        group: {
+          codeEditor: { monacoEditor: editor },
+        } as any,
+      }),
+    );
+    const editor1 = monaco.editor.create(document.createElement('div'), { value: '' });
+    eventBus.fire(
+      new EditorGroupOpenEvent({
+        resource: {
+          uri: {
+            toString: jest.fn().mockImplementation(() => MOCK_URI),
+          },
+        } as any,
+        group: {
+          codeEditor: { monacoEditor: editor1 },
+        } as any,
+      }),
+    );
+
+    expect(service['pendingBinding'].has(MOCK_URI)).toBeTruthy();
+    const pending = service['pendingBinding'].get(MOCK_URI);
+    expect(pending?.editor.size).toBe(2);
 
     await promise;
 
-    expect(service['getBinding'](workbenchEditorService.uri.toString())).toBeInstanceOf(TextModelBinding);
+    expect(service['pendingBinding'].has(MOCK_URI)).not.toBeTruthy();
+
+    const binding = service['getBinding'](MOCK_URI);
+    expect(binding).toBeInstanceOf(TextModelBinding);
+    expect(binding?.editors.size).toBe(2);
   });
 
   it('should call undo and redo on current binding', () => {
-    const targetBinding = service['getBinding'](workbenchEditorService.uri.toString()) as TextModelBinding;
+    const targetBinding = service['getBinding'](MOCK_URI) as TextModelBinding;
     expect(targetBinding).toBeInstanceOf(TextModelBinding);
     const undoSpy = jest.spyOn(targetBinding, 'undo');
     const redoSpy = jest.spyOn(targetBinding, 'redo');
@@ -143,52 +175,65 @@ describe('CollaborationService basic routines', () => {
     expect(redoSpy).toBeCalled();
   });
 
+  it('should react on EditorGroupOpenEvent', () => {
+    const event = new EditorGroupOpenEvent({
+      resource: {
+        uri: {
+          toString: jest.fn().mockImplementation(() => MOCK_URI),
+        },
+      } as any,
+      group: {
+        codeEditor: { monacoEditor: jest.fn() },
+      } as any,
+    });
+
+    const binding = service['getBinding'](event.payload.resource.uri.toString());
+    const spy = jest.spyOn(binding as any, 'addEditor').mockImplementation(() => {});
+
+    eventBus.fire(event);
+
+    expect(spy).toBeCalled();
+  });
+
   it('should react on EditorGroupCloseEvent', () => {
     const event = new EditorGroupCloseEvent({
       resource: {
-        uri: new URI(workbenchEditorService.uri.toString()),
+        uri: {
+          toString: jest.fn().mockImplementation(() => MOCK_URI),
+        },
       } as any,
-      group: null as any,
+      group: {
+        codeEditor: jest.fn(),
+      } as any,
     });
-    const removeSpy = jest.spyOn(service as any, 'removeBinding');
-    expect(service['bindingMap'].has(workbenchEditorService.uri.toString())).toBeTruthy();
-    eventBus.fire(event);
-    expect(removeSpy).toBeCalled();
-    expect(service['bindingMap'].has(workbenchEditorService.uri.toString())).not.toBeTruthy();
-  });
 
-  it('should react on EditorActiveResourceStateChangedEvent', async () => {
-    // change uri and textModel
-    workbenchEditorService.updateUri('file://home/situ2001/114514/1919811');
-    workbenchEditorService.updateCurrentTextModelWithString('');
+    const binding = service['getBinding'](event.payload.resource.uri.toString());
+    const spy = jest.spyOn(binding as any, 'removeEditor').mockImplementation(() => {});
 
-    // promise that listens on yMapEvent
-    let _handler: () => void;
-    const promise = new Promise((resolve, reject) => {
-      const handler = () => resolve(1);
-      _handler = handler;
-      service['yTextMap'].observe(handler);
-    }).finally(() => service['yTextMap'].unobserve(_handler));
-
-    const event = new EditorActiveResourceStateChangedEvent({
-      openType: { type: 'code' },
-      resource: null,
-    });
     eventBus.fire(event);
 
-    await promise;
-
-    expect(service['bindingMap'].has(workbenchEditorService.uri.toString())).toBeTruthy();
-    expect(service['getBinding'](workbenchEditorService.uri.toString())).toBeInstanceOf(TextModelBinding);
+    expect(spy).toBeCalled();
   });
 
-  // TODO move to node side
+  it('should react on EditorDocumentModelRemovalEvent', () => {
+    const event = new EditorDocumentModelRemovalEvent({
+      codeUri: {
+        toString: () => MOCK_URI,
+        scheme: 'file',
+      },
+    } as any);
+    eventBus.fire(event);
+    expect(service['bindingMap'].has(MOCK_URI)).not.toBeTruthy();
+  });
+
   it('should react on FileChangeEvent', () => {
     // const handlerSpy = jest.spyOn(service as any, 'fileChangeEventHandler');
+    service['yTextMap'].set('file://1919810', new Y.Text(''));
+    service['createAndSetBinding']('file://1919810', createModel('', undefined));
     const removeBindingSpy = jest.spyOn(service as any, 'removeBinding');
 
     // delete a file in a naive way
-    service['yTextMap'].delete(workbenchEditorService.uri.toString());
+    service['yTextMap'].delete('file://1919810');
 
     // expect(handlerSpy).toBeCalled();
     expect(removeBindingSpy).toBeCalled();
