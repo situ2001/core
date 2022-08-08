@@ -268,10 +268,10 @@ export class TextModelBinding {
   dispose() {
     this.undoManger.destroy();
     this.disposables.forEach((disposable) => disposable.dispose());
-    this.disposableContentChangeHandler.dispose();
+    this.awareness.off('change', this.renderDecorations);
     this.doc.off('beforeAllTransactions', this.beforeAllTransactionsHandler);
     this.yText.unobserve(this.yTextObserver);
-    this.awareness.off('change', this.renderDecorations);
+    this.disposableContentChangeHandler.dispose();
   }
 }
 
