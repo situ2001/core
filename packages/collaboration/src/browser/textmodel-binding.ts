@@ -234,6 +234,16 @@ export class TextModelBinding {
     this.undoManger.redo();
   }
 
+  changeYText(newText: Y.Text) {
+    this.yText.unobserve(this.yTextObserver);
+    this.yText = newText;
+    this.yText.observe(this.yTextObserver);
+
+    this.disposableContentChangeHandler.dispose();
+    this.setModelContent();
+    this.disposableContentChangeHandler = this.textModel.onDidChangeContent(this.textModelOnDidChangeContentHandler);
+  }
+
   setModelContent() {
     const yTextValue = this.yText.toString();
     if (this.textModel.getValue() !== yTextValue) {

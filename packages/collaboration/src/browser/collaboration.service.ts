@@ -57,9 +57,10 @@ export class CollaborationService extends WithEventBus implements ICollaboration
 
   private yMapObserver = (event: Y.YMapEvent<Y.Text>) => {
     const changes = event.changes.keys;
-    this.logger.debug('Change occurs', changes);
     changes.forEach((change, key) => {
+      this.logger.log('change.action', change.action);
       if (change.action === 'add') {
+        // if bindingMap has no key that is equal to key
         if (this.pendingBinding.has(key) && !this.bindingMap.has(key)) {
           // retrieve from payload object, then create new binding
           const payload = this.pendingBinding.get(key)!;
@@ -69,9 +70,17 @@ export class CollaborationService extends WithEventBus implements ICollaboration
           }
           this.pendingBinding.delete(key);
           this.logger.debug('Binding created', binding);
+        } else {
+          const localBinding = this.getBinding(key);
+          if (localBinding) {
+            // rebind TextModel with new yText
+            this.logger.debug('Local YText is different from remote');
+            localBinding.changeYText(this.yTextMap.get(key)!);
+          }
         }
       } else if (change.action === 'delete') {
-        this.removeBinding(key);
+        // do nothing, binding should be removed by textModelRemovalEvent
+        // this.removeBinding(key);
       }
     });
   };
@@ -140,7 +149,6 @@ export class CollaborationService extends WithEventBus implements ICollaboration
     if (binding) {
       binding.dispose();
       this.bindingMap.delete(uri);
-      // todo ref = ref - 1 (through back service)
       this.logger.debug('Removed binding');
     }
   }
@@ -157,6 +165,7 @@ export class CollaborationService extends WithEventBus implements ICollaboration
       const uriString = payload.uri.toString();
       const modelRef = this.docModelManager.getModelReference(payload.uri);
       const monacoTextModel = modelRef?.instance.getMonacoModel();
+      modelRef?.dispose(); // be careful
 
       if (monacoTextModel) {
         this.logger.debug('TextModel', monacoTextModel);
@@ -176,6 +185,10 @@ export class CollaborationService extends WithEventBus implements ICollaboration
   private handleDocumentModelRemoval(e: EditorDocumentModelRemovalEvent) {
     if (e.payload.codeUri.scheme === 'file') {
       this.logger.debug('Doc model removed', e);
+      if (this.pendingBinding.has(e.payload.codeUri.toString())) {
+        // clean up
+        this.pendingBinding.delete(e.payload.codeUri.toString());
+      }
       this.removeBinding(e.payload.codeUri.toString());
     }
   }
