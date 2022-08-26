@@ -17,6 +17,8 @@ import {
 } from '@opensumi/ide-core-browser';
 import { InlineActionBar } from '@opensumi/ide-core-browser/lib/components/actions';
 import { Scroll } from '@opensumi/ide-core-browser/lib/components/scroll';
+import { LAYOUT_VIEW_SIZE } from '@opensumi/ide-core-browser/lib/layout/constants';
+import { VIEW_CONTAINERS } from '@opensumi/ide-core-browser/lib/layout/view-id';
 import { IMenuRegistry, MenuId } from '@opensumi/ide-core-browser/lib/menu/next';
 import { useInjectable, useUpdateOnEventBusEvent } from '@opensumi/ide-core-browser/lib/react-hooks';
 
@@ -57,8 +59,8 @@ export const Tabs = ({ group }: ITabsProps) => {
   useUpdateOnGroupTabChange(group);
   useUpdateOnEventBusEvent(
     ResourceDidUpdateEvent,
-    [group.resources.length],
-    (uri) => group.resources.findIndex((r) => r.uri.isEqual(uri)) !== -1,
+    [group.resources],
+    (uri) => !!contentRef && group.resources.findIndex((r) => r.uri.isEqual(uri)) !== -1,
   );
 
   useEffect(() => {
@@ -261,7 +263,7 @@ export const Tabs = ({ group }: ITabsProps) => {
     <div
       className={styles.kt_editor_tabs_content}
       ref={contentRef as any}
-      onDragLeave={(e) => {
+      onDragLeave={() => {
         if (contentRef.current) {
           contentRef.current.classList.remove(styles.kt_on_drag_over);
         }
@@ -301,7 +303,11 @@ export const Tabs = ({ group }: ITabsProps) => {
               [styles.kt_editor_tab_current]: group.currentResource === resource,
               [styles.kt_editor_tab_preview]: group.previewURI && group.previewURI.isEqual(resource.uri),
             })}
-            style={wrapMode && i === group.resources.length - 1 ? { marginRight: lastMarginRight } : {}}
+            style={
+              wrapMode && i === group.resources.length - 1
+                ? { marginRight: lastMarginRight, height: LAYOUT_VIEW_SIZE.EDITOR_TABS_HEIGHT }
+                : { height: LAYOUT_VIEW_SIZE.EDITOR_TABS_HEIGHT }
+            }
             onContextMenu={(event) => {
               tabTitleMenuService.show(event.nativeEvent.x, event.nativeEvent.y, resource && resource.uri, group);
               event.preventDefault();
@@ -316,7 +322,7 @@ export const Tabs = ({ group }: ITabsProps) => {
             }}
             onMouseDown={(e) => {
               if (e.nativeEvent.which === 1) {
-                group.open(resource.uri);
+                group.open(resource.uri, { focus: true });
               }
             }}
             onDragOver={(e) => {
@@ -379,7 +385,7 @@ export const Tabs = ({ group }: ITabsProps) => {
   );
 
   return (
-    <div className={styles.kt_editor_tabs}>
+    <div id={VIEW_CONTAINERS.EDITOR_TABS} className={styles.kt_editor_tabs}>
       <div className={styles.kt_editor_tabs_scroll_wrapper}>
         {!wrapMode ? (
           <Scroll ref={(el) => (el ? (tabContainer.current = el.ref) : null)} className={styles.kt_editor_tabs_scroll}>
@@ -408,6 +414,11 @@ export const EditorActions = forwardRef<HTMLDivElement, IEditorActionsProps>(
     const editorService: WorkbenchEditorServiceImpl = useInjectable(WorkbenchEditorService);
     const menu = editorActionRegistry.getMenu(group);
     const [hasFocus, setHasFocus] = useState<boolean>(editorService.currentEditorGroup === group);
+    const [args, setArgs] = useState<[URI, IEditorGroup, MaybeNull<URI>] | undefined>(
+      group.currentResource
+        ? [group.currentResource.uri, group, group.currentOrPreviousFocusedEditor?.currentUri]
+        : undefined,
+    );
 
     useEffect(() => {
       const disposableCollection = new DisposableCollection();
@@ -416,17 +427,27 @@ export const EditorActions = forwardRef<HTMLDivElement, IEditorActionsProps>(
           setHasFocus(editorService.currentEditorGroup === group);
         }),
       );
+      disposableCollection.push(
+        editorService.onActiveResourceChange(() => {
+          setArgs(
+            group.currentResource
+              ? [group.currentResource.uri, group, group.currentOrPreviousFocusedEditor?.currentUri]
+              : undefined,
+          );
+        }),
+      );
       return () => {
         disposableCollection.dispose();
       };
     }, []);
 
-    const args: [URI, IEditorGroup, MaybeNull<URI>] | undefined = group.currentResource
-      ? [group.currentResource.uri, group, group.currentOrPreviousFocusedEditor?.currentUri]
-      : undefined;
     // 第三个参数是当前编辑器的URI（如果有）
     return (
-      <div ref={ref} className={classnames(styles.editor_actions, className)}>
+      <div
+        ref={ref}
+        className={classnames(styles.editor_actions, className)}
+        style={{ height: LAYOUT_VIEW_SIZE.EDITOR_TABS_HEIGHT }}
+      >
         <InlineActionBar<URI, IEditorGroup, MaybeNull<URI>>
           menus={menu}
           context={args as any /* 这个推断过不去.. */}

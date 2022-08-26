@@ -71,6 +71,7 @@ export const EDITOR_SUGGEST_DEFAULTS = {
   showSnippets: true,
   showUsers: true,
   showIssues: true,
+  detailsVisible: true,
   preview: true,
   statusBar: {
     visible: false,
@@ -184,7 +185,7 @@ export const EDITOR_DEFAULTS = {
     guides: {
       indentation: true,
       highlightActiveIndentGuide: true,
-      bracketPairs: false,
+      bracketPairs: true,
     },
     fixedOverflowWidgets: true,
   },
@@ -560,10 +561,23 @@ const monacoEditorSchema: PreferenceSchemaProperties = {
     default: EDITOR_SUGGEST_DEFAULTS.preview,
     description: localize('editor.suggest.preview', 'Enable or disable the rendering of the suggestion preview.'),
   },
+  'editor.suggest.details.visible': {
+    type: 'boolean',
+    default: EDITOR_SUGGEST_DEFAULTS.detailsVisible,
+    description: localize('editor.suggest.details.visible'),
+  },
   'editor.inlineSuggest.enabled': {
     type: 'boolean',
     default: EDITOR_INLINE_SUGGEST_DEFAULTS.enabled,
     description: localize('inlineSuggest.enabled', 'Enable or disable the rendering of automatic inline completions.'),
+  },
+  'editor.experimental.stickyScroll.enabled': {
+    type: 'boolean',
+    default: true,
+    description: localize(
+      'editor.experimental.stickyScroll',
+      'Shows the nested current scopes during the scroll at the top of the editor.',
+    ),
   },
   'editor.letterSpacing': {
     type: 'number',
@@ -1789,7 +1803,7 @@ const customEditorSchema: PreferenceSchemaProperties = {
   },
   'editor.bracketPairColorization.enabled': {
     type: 'boolean',
-    default: false,
+    default: true,
     description: '%editor.configuration.bracketPairColorization.enabled%',
   },
   'editor.largeFile': {
@@ -1823,6 +1837,11 @@ const customEditorSchema: PreferenceSchemaProperties = {
     type: 'boolean',
     default: false, // 开天修改
     description: '%diffEditor.configuration.ignoreTrimWhitespace%',
+  },
+  'editor.experimental.stickyScroll.enabled': {
+    type: 'boolean',
+    default: false,
+    description: '%editor.experimental.stickyScroll.enabled.description%',
   },
 };
 
